@@ -1,0 +1,19 @@
+{
+  "khulnasoft": {
+    "repos": {
+      "demo": {
+        "owners": [
+          "khulnasoft"
+        ],
+        "collaborators": [],
+        "settings": {
+          "branchProtection": {
+            "main": {
+              "requireReview": true
+            }
+          }
+        }
+      }
+    }
+  }
+}
