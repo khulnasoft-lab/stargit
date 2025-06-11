@@ -1,0 +1,165 @@
+version: '3.8'
+
+services:
+  # Database
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: stargit
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts:/docker-entrypoint-initdb.d
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - stargit-network
+
+  # Redis for caching and sessions
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - stargit-network
+
+  # Frontend (Next.js)
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    environment:
+      - NODE_ENV=production
+      - NEXT_PUBLIC_API_URL=http://backend:3001
+      - NEXT_PUBLIC_GIT_BASE_URL=http://git:22
+      - DATABASE_URL=postgresql://postgres:${POSTGRES_PASSWORD:-postgres}@postgres:5432/stargit
+      - REDIS_URL=redis://redis:6379
+      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
+      - NEXTAUTH_URL=${NEXTAUTH_URL:-http://localhost:3000}
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - stargit-network
+    restart: unless-stopped
+
+  # Backend API and Git server
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://postgres:${POSTGRES_PASSWORD:-postgres}@postgres:5432/stargit
+      - REDIS_URL=redis://redis:6379
+      - GIT_REPOSITORIES_PATH=/var/git/repositories
+      - GIT_USER=git
+      - GIT_EMAIL=git@localhost
+      - API_PORT=3001
+      - SSH_PORT=22
+    ports:
+      - "3001:3001"
+      - "2222:22"
+    volumes:
+      - git_repositories:/var/git/repositories
+      - git_temp:/var/git/temp
+      - ssh_keys:/home/git/.ssh
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - stargit-network
+    restart: unless-stopped
+
+  # Webhook processor
+  webhook-processor:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    command: ["node", "dist/services/webhook-processor.js"]
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://postgres:${POSTGRES_PASSWORD:-postgres}@postgres:5432/stargit
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - stargit-network
+    restart: unless-stopped
+    deploy:
+      replicas: 2
+
+  # Background job processor
+  job-processor:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    command: ["node", "dist/services/job-processor.js"]
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://postgres:${POSTGRES_PASSWORD:-postgres}@postgres:5432/stargit
+      - REDIS_URL=redis://redis:6379
+      - GIT_REPOSITORIES_PATH=/var/git/repositories
+    volumes:
+      - git_repositories:/var/git/repositories
+      - git_temp:/var/git/temp
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - stargit-network
+    restart: unless-stopped
+    deploy:
+      replicas: 2
+
+  # Nginx reverse proxy
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./docker/nginx.conf:/etc/nginx/nginx.conf
+      - ./docker/ssl:/etc/nginx/ssl
+    depends_on:
+      - frontend
+      - backend
+    networks:
+      - stargit-network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
+  git_repositories:
+  git_temp:
+  ssh_keys:
+
+networks:
+  stargit-network:
+    driver: bridge

@@ -1,0 +1,234 @@
+# Default values for stargit
+replicaCount: 3
+
+image:
+  repository: stargit/stargit
+  pullPolicy: IfNotPresent
+  tag: "latest"
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+
+podSecurityContext:
+  fsGroup: 2000
+
+securityContext:
+  capabilities:
+    drop:
+    - ALL
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  runAsUser: 1000
+
+# Frontend service configuration
+frontend:
+  enabled: true
+  replicaCount: 3
+  image:
+    repository: stargit/frontend
+    tag: "latest"
+  service:
+    type: ClusterIP
+    port: 3000
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 250m
+      memory: 256Mi
+  autoscaling:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+# Backend service configuration
+backend:
+  enabled: true
+  replicaCount: 3
+  image:
+    repository: stargit/backend
+    tag: "latest"
+  service:
+    type: ClusterIP
+    port: 3001
+    sshPort: 22
+  resources:
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+    requests:
+      cpu: 500m
+      memory: 512Mi
+  autoscaling:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 15
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
+  persistence:
+    enabled: true
+    storageClass: ""
+    accessMode: ReadWriteMany
+    size: 100Gi
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+# Webhook processor configuration
+webhookProcessor:
+  enabled: true
+  replicaCount: 2
+  image:
+    repository: stargit/webhook-processor
+    tag: "latest"
+  resources:
+    limits:
+      cpu: 500m
+      memory: 256Mi
+    requests:
+      cpu: 250m
+      memory: 128Mi
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 8
+    targetCPUUtilizationPercentage: 70
+
+# Job processor configuration
+jobProcessor:
+  enabled: true
+  replicaCount: 2
+  image:
+    repository: stargit/job-processor
+    tag: "latest"
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 250m
+      memory: 256Mi
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 6
+    targetCPUUtilizationPercentage: 70
+
+# Ingress configuration
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+  hosts:
+    - host: stargit.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+          service: frontend
+        - path: /api
+          pathType: Prefix
+          service: backend
+  tls:
+    - secretName: stargit-tls
+      hosts:
+        - stargit.example.com
+
+# Git SSH service configuration
+gitSsh:
+  enabled: true
+  service:
+    type: LoadBalancer
+    port: 22
+    annotations: {}
+
+# PostgreSQL configuration
+postgresql:
+  enabled: true
+  auth:
+    postgresPassword: "changeme"
+    username: "stargit"
+    password: "changeme"
+    database: "stargit"
+  primary:
+    persistence:
+      enabled: true
+      size: 20Gi
+    resources:
+      limits:
+        cpu: 1000m
+        memory: 2Gi
+      requests:
+        cpu: 500m
+        memory: 1Gi
+
+# Redis configuration
+redis:
+  enabled: true
+  auth:
+    enabled: false
+  master:
+    persistence:
+      enabled: true
+      size: 8Gi
+    resources:
+      limits:
+        cpu: 500m
+        memory: 512Mi
+      requests:
+        cpu: 250m
+        memory: 256Mi
+
+# Environment variables
+env:
+  NODE_ENV: "production"
+  GIT_REPOSITORIES_PATH: "/var/git/repositories"
+  GIT_USER: "git"
+  GIT_EMAIL: "git@stargit.example.com"
+  NEXT_PUBLIC_API_URL: "https://stargit.example.com/api"
+  NEXT_PUBLIC_GIT_BASE_URL: "https://git.stargit.example.com"
+
+# Secrets (should be overridden in production)
+secrets:
+  databaseUrl: "postgresql://stargit:changeme@stargit-postgresql:5432/stargit"
+  redisUrl: "redis://stargit-redis-master:6379"
+  nextauthSecret: "changeme"
+  nextauthUrl: "https://stargit.example.com"
+  jwtSecret: "changeme"
+
+# Monitoring
+monitoring:
+  enabled: true
+  serviceMonitor:
+    enabled: true
+    interval: 30s
+    scrapeTimeout: 10s
+
+# Network policies
+networkPolicy:
+  enabled: true
+  ingress:
+    enabled: true
+  egress:
+    enabled: true
+
+# Pod disruption budget
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1

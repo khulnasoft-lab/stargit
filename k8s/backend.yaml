@@ -1,0 +1,119 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  namespace: stargit
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: backend
+  template:
+    metadata:
+      labels:
+        app: backend
+    spec:
+      containers:
+      - name: backend
+        image: stargit/backend:latest
+        ports:
+        - containerPort: 3001
+        - containerPort: 22
+        env:
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: database-secret
+              key: url
+        envFrom:
+        - configMapRef:
+            name: stargit-config
+        volumeMounts:
+        - name: git-repositories
+          mountPath: /var/git/repositories
+        - name: git-temp
+          mountPath: /var/git/temp
+        - name: ssh-keys
+          mountPath: /home/git/.ssh
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "500m"
+          limits:
+            memory: "1Gi"
+            cpu: "1000m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 3001
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 3001
+          initialDelaySeconds: 5
+          periodSeconds: 5
+      volumes:
+      - name: git-repositories
+        persistentVolumeClaim:
+          claimName: git-repositories-pvc
+      - name: git-temp
+        emptyDir: {}
+      - name: ssh-keys
+        persistentVolumeClaim:
+          claimName: ssh-keys-pvc
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: git-repositories-pvc
+  namespace: stargit
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 100Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ssh-keys-pvc
+  namespace: stargit
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend-service
+  namespace: stargit
+spec:
+  selector:
+    app: backend
+  ports:
+  - name: api
+    port: 3001
+    targetPort: 3001
+  - name: ssh
+    port: 22
+    targetPort: 22
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: git-ssh-service
+  namespace: stargit
+spec:
+  selector:
+    app: backend
+  ports:
+  - port: 22
+    targetPort: 22
+  type: LoadBalancer

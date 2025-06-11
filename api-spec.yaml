@@ -1,0 +1,963 @@
+openapi: 3.0.3
+info:
+  title: StarGit API
+  description: |
+    StarGit is a comprehensive Git hosting platform API that provides repository management,
+    user authentication, organization management, and webhook integration.
+    
+    ## Authentication
+    
+    The API supports multiple authentication methods:
+    - **Bearer Token**: Use `Authorization: Bearer <token>` header
+    - **Basic Auth**: Use `Authorization: Basic <base64(username:password)>` header
+    - **OAuth2**: OAuth2 flow with GitHub, GitLab, and other providers
+    
+    ## Rate Limiting
+    
+    API requests are rate limited:
+    - **Authenticated users**: 5,000 requests per hour
+    - **Unauthenticated users**: 60 requests per hour
+    - **Search API**: 30 requests per minute for authenticated users
+    
+    ## Pagination
+    
+    List endpoints support pagination using the following parameters:
+    - `page`: Page number (default: 1)
+    - `per_page`: Items per page (default: 30, max: 100)
+    
+    ## Webhooks
+    
+    StarGit supports webhooks for real-time notifications of repository events.
+    Supported events include push, pull_request, issues, releases, and more.
+    
+  version: 1.0.0
+  contact:
+    name: StarGit API Support
+    url: https://stargit.dev/support
+    email: api-support@stargit.dev
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: https://api.stargit.dev/v1
+    description: Production server
+  - url: https://api-staging.stargit.dev/v1
+    description: Staging server
+
+security:
+  - BearerAuth: []
+  - BasicAuth: []
+  - OAuth2: []
+
+paths:
+  # Repository Management
+  /repositories:
+    get:
+      summary: List repositories
+      description: List repositories for the authenticated user
+      tags: [Repositories]
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+        - name: visibility
+          in: query
+          schema:
+            type: string
+            enum: [all, public, private]
+            default: all
+        - name: affiliation
+          in: query
+          schema:
+            type: string
+            enum: [owner, collaborator, organization_member]
+            default: owner
+        - name: type
+          in: query
+          schema:
+            type: string
+            enum: [all, owner, public, private, member]
+            default: all
+        - name: sort
+          in: query
+          schema:
+            type: string
+            enum: [created, updated, pushed, full_name]
+            default: created
+        - name: direction
+          in: query
+          schema:
+            type: string
+            enum: [asc, desc]
+            default: desc
+      responses:
+        '200':
+          description: List of repositories
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Repository'
+          headers:
+            Link:
+              $ref: '#/components/headers/Link'
+            X-Total-Count:
+              $ref: '#/components/headers/X-Total-Count'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      summary: Create repository
+      description: Create a new repository for the authenticated user
+      tags: [Repositories]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRepositoryRequest'
+      responses:
+        '201':
+          description: Repository created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Repository'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /repositories/{owner}/{repo}:
+    get:
+      summary: Get repository
+      description: Get a repository by owner and name
+      tags: [Repositories]
+      parameters:
+        - $ref: '#/components/parameters/Owner'
+        - $ref: '#/components/parameters/Repo'
+      responses:
+        '200':
+          description: Repository details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Repository'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      summary: Update repository
+      description: Update repository settings
+      tags: [Repositories]
+      parameters:
+        - $ref: '#/components/parameters/Owner'
+        - $ref: '#/components/parameters/Repo'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateRepositoryRequest'
+      responses:
+        '200':
+          description: Repository updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Repository'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      summary: Delete repository
+      description: Delete a repository
+      tags: [Repositories]
+      parameters:
+        - $ref: '#/components/parameters/Owner'
+        - $ref: '#/components/parameters/Repo'
+      responses:
+        '204':
+          description: Repository deleted successfully
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # User Management
+  /user:
+    get:
+      summary: Get authenticated user
+      description: Get the authenticated user's profile
+      tags: [Users]
+      responses:
+        '200':
+          description: User profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    patch:
+      summary: Update authenticated user
+      description: Update the authenticated user's profile
+      tags: [Users]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateUserRequest'
+      responses:
+        '200':
+          description: User updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /users/{username}:
+    get:
+      summary: Get user
+      description: Get a user by username
+      tags: [Users]
+      parameters:
+        - name: username
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: User profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicUser'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # Organization Management
+  /organizations:
+    get:
+      summary: List organizations
+      description: List organizations for the authenticated user
+      tags: [Organizations]
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+      responses:
+        '200':
+          description: List of organizations
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Organization'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      summary: Create organization
+      description: Create a new organization
+      tags: [Organizations]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateOrganizationRequest'
+      responses:
+        '201':
+          description: Organization created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Organization'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /organizations/{org}:
+    get:
+      summary: Get organization
+      description: Get an organization by name
+      tags: [Organizations]
+      parameters:
+        - name: org
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Organization details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Organization'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # Webhook Management
+  /repositories/{owner}/{repo}/hooks:
+    get:
+      summary: List repository webhooks
+      description: List webhooks for a repository
+      tags: [Webhooks]
+      parameters:
+        - $ref: '#/components/parameters/Owner'
+        - $ref: '#/components/parameters/Repo'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+      responses:
+        '200':
+          description: List of webhooks
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Webhook'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      summary: Create repository webhook
+      description: Create a new webhook for a repository
+      tags: [Webhooks]
+      parameters:
+        - $ref: '#/components/parameters/Owner'
+        - $ref: '#/components/parameters/Repo'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateWebhookRequest'
+      responses:
+        '201':
+          description: Webhook created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Webhook'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    BasicAuth:
+      type: http
+      scheme: basic
+    OAuth2:
+      type: oauth2
+      flows:
+        authorizationCode:
+          authorizationUrl: https://api.stargit.dev/oauth/authorize
+          tokenUrl: https://api.stargit.dev/oauth/token
+          scopes:
+            repo: Full control of private repositories
+            public_repo: Access public repositories
+            user: Update user profile
+            user:email: Access user email addresses
+
+  parameters:
+    Owner:
+      name: owner
+      in: path
+      required: true
+      description: Repository owner (username or organization name)
+      schema:
+        type: string
+    Repo:
+      name: repo
+      in: path
+      required: true
+      description: Repository name
+      schema:
+        type: string
+    Page:
+      name: page
+      in: query
+      description: Page number
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    PerPage:
+      name: per_page
+      in: query
+      description: Number of items per page
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 30
+
+  headers:
+    Link:
+      description: Pagination links
+      schema:
+        type: string
+        example: '<https://api.stargit.dev/repositories?page=2>; rel="next", <https://api.stargit.dev/repositories?page=5>; rel="last"'
+    X-Total-Count:
+      description: Total number of items
+      schema:
+        type: integer
+
+  responses:
+    BadRequest:
+      description: Bad request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Unauthorized:
+      description: Authentication required
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Forbidden:
+      description: Insufficient permissions
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    ValidationError:
+      description: Validation error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ValidationError'
+
+  schemas:
+    Repository:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        full_name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        owner:
+          $ref: '#/components/schemas/Owner'
+        private:
+          type: boolean
+        visibility:
+          type: string
+          enum: [public, private, internal]
+        fork:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        pushed_at:
+          type: string
+          format: date-time
+          nullable: true
+        size:
+          type: integer
+        stargazers_count:
+          type: integer
+        watchers_count:
+          type: integer
+        forks_count:
+          type: integer
+        open_issues_count:
+          type: integer
+        default_branch:
+          type: string
+        permissions:
+          type: object
+          properties:
+            admin:
+              type: boolean
+            push:
+              type: boolean
+            pull:
+              type: boolean
+        has_issues:
+          type: boolean
+        has_wiki:
+          type: boolean
+        has_projects:
+          type: boolean
+        archived:
+          type: boolean
+        disabled:
+          type: boolean
+        clone_url:
+          type: string
+          format: uri
+        ssh_url:
+          type: string
+        html_url:
+          type: string
+          format: uri
+        url:
+          type: string
+          format: uri
+
+    CreateRepositoryRequest:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          pattern: '^[a-zA-Z0-9._-]+$'
+          minLength: 1
+          maxLength: 100
+        description:
+          type: string
+          maxLength: 500
+        visibility:
+          type: string
+          enum: [public, private, internal]
+          default: public
+        auto_init:
+          type: boolean
+          default: false
+        gitignore_template:
+          type: string
+        license_template:
+          type: string
+        default_branch:
+          type: string
+          default: main
+        organization_id:
+          type: string
+          format: uuid
+
+    UpdateRepositoryRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          pattern: '^[a-zA-Z0-9._-]+$'
+          minLength: 1
+          maxLength: 100
+        description:
+          type: string
+          maxLength: 500
+        visibility:
+          type: string
+          enum: [public, private, internal]
+        default_branch:
+          type: string
+        has_issues:
+          type: boolean
+        has_wiki:
+          type: boolean
+        has_projects:
+          type: boolean
+        archived:
+          type: boolean
+
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        login:
+          type: string
+        name:
+          type: string
+          nullable: true
+        email:
+          type: string
+          format: email
+          nullable: true
+        avatar_url:
+          type: string
+          format: uri
+          nullable: true
+        bio:
+          type: string
+          nullable: true
+        location:
+          type: string
+          nullable: true
+        company:
+          type: string
+          nullable: true
+        blog:
+          type: string
+          format: uri
+          nullable: true
+        twitter_username:
+          type: string
+          nullable: true
+        public_repos:
+          type: integer
+        public_gists:
+          type: integer
+        followers:
+          type: integer
+        following:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        type:
+          type: string
+          enum: [User]
+        site_admin:
+          type: boolean
+
+    PublicUser:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        login:
+          type: string
+        name:
+          type: string
+          nullable: true
+        avatar_url:
+          type: string
+          format: uri
+          nullable: true
+        bio:
+          type: string
+          nullable: true
+        location:
+          type: string
+          nullable: true
+        company:
+          type: string
+          nullable: true
+        blog:
+          type: string
+          format: uri
+          nullable: true
+        twitter_username:
+          type: string
+          nullable: true
+        public_repos:
+          type: integer
+        public_gists:
+          type: integer
+        followers:
+          type: integer
+        following:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        type:
+          type: string
+          enum: [User]
+
+    UpdateUserRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 100
+        email:
+          type: string
+          format: email
+        bio:
+          type: string
+          maxLength: 500
+        location:
+          type: string
+          maxLength: 100
+        company:
+          type: string
+          maxLength: 100
+        blog:
+          type: string
+          format: uri
+        twitter_username:
+          type: string
+          maxLength: 50
+
+    Organization:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        login:
+          type: string
+        name:
+          type: string
+          nullable: true
+        description:
+          type: string
+          nullable: true
+        avatar_url:
+          type: string
+          format: uri
+          nullable: true
+        location:
+          type: string
+          nullable: true
+        email:
+          type: string
+          format: email
+          nullable: true
+        blog:
+          type: string
+          format: uri
+          nullable: true
+        twitter_username:
+          type: string
+          nullable: true
+        company:
+          type: string
+          nullable: true
+        public_repos:
+          type: integer
+        public_members:
+          type: integer
+        followers:
+          type: integer
+        following:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        type:
+          type: string
+          enum: [Organization]
+
+    CreateOrganizationRequest:
+      type: object
+      required:
+        - login
+      properties:
+        login:
+          type: string
+          pattern: '^[a-zA-Z0-9._-]+$'
+          minLength: 1
+          maxLength: 50
+        name:
+          type: string
+          maxLength: 100
+        description:
+          type: string
+          maxLength: 500
+        email:
+          type: string
+          format: email
+        location:
+          type: string
+          maxLength: 100
+        blog:
+          type: string
+          format: uri
+        twitter_username:
+          type: string
+          maxLength: 50
+
+    Owner:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        login:
+          type: string
+        type:
+          type: string
+          enum: [User, Organization]
+        avatar_url:
+          type: string
+          format: uri
+          nullable: true
+
+    Webhook:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        active:
+          type: boolean
+        events:
+          type: array
+          items:
+            type: string
+        config:
+          type: object
+          properties:
+            url:
+              type: string
+              format: uri
+            content_type:
+              type: string
+              enum: [json, form]
+            insecure_ssl:
+              type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        url:
+          type: string
+          format: uri
+        test_url:
+          type: string
+          format: uri
+        ping_url:
+          type: string
+          format: uri
+        deliveries_url:
+          type: string
+          format: uri
+        last_response:
+          type: object
+          properties:
+            code:
+              type: integer
+              nullable: true
+            status:
+              type: string
+            message:
+              type: string
+              nullable: true
+
+    CreateWebhookRequest:
+      type: object
+      required:
+        - name
+        - config
+        - events
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        config:
+          type: object
+          required:
+            - url
+          properties:
+            url:
+              type: string
+              format: uri
+            content_type:
+              type: string
+              enum: [json, form]
+              default: json
+            secret:
+              type: string
+              minLength: 8
+            insecure_ssl:
+              type: boolean
+              default: false
+        events:
+          type: array
+          items:
+            type: string
+            enum: [push, pull_request, issues, issue_comment, release, deployment, deployment_status, ping]
+          minItems: 1
+        active:
+          type: boolean
+          default: true
+
+    Error:
+      type: object
+      properties:
+        message:
+          type: string
+        documentation_url:
+          type: string
+          format: uri
+
+    ValidationError:
+      type: object
+      properties:
+        message:
+          type: string
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              resource:
+                type: string
+              field:
+                type: string
+              code:
+                type: string
+              message:
+                type: string
+
+tags:
+  - name: Repositories
+    description: Repository management operations
+  - name: Users
+    description: User management operations
+  - name: Organizations
+    description: Organization management operations
+  - name: Webhooks
+    description: Webhook management operations

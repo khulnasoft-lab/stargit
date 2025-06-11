@@ -1,0 +1,26 @@
+apiVersion: v2
+name: stargit
+description: A Helm chart for StarGit - Git hosting platform
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+keywords:
+  - git
+  - repository
+  - hosting
+  - devops
+home: https://github.com/stargit/stargit
+sources:
+  - https://github.com/stargit/stargit
+maintainers:
+  - name: StarGit Team
+    email: team@stargit.dev
+dependencies:
+  - name: postgresql
+    version: 12.1.9
+    repository: https://charts.bitnami.com/bitnami
+    condition: postgresql.enabled
+  - name: redis
+    version: 17.3.7
+    repository: https://charts.bitnami.com/bitnami
+    condition: redis.enabled

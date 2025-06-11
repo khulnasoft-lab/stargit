@@ -1,0 +1,92 @@
+version: '3.8'
+
+services:
+  # Production overrides
+  postgres:
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.0'
+        reservations:
+          memory: 1G
+          cpus: '0.5'
+    environment:
+      POSTGRES_DB: stargit_prod
+      POSTGRES_USER: stargit_user
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - /data/postgres:/var/lib/postgresql/data
+
+  redis:
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+          cpus: '0.25'
+    volumes:
+      - /data/redis:/data
+
+  frontend:
+    deploy:
+      replicas: 3
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+          cpus: '0.25'
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+    environment:
+      - NEXT_PUBLIC_API_URL=https://api.yourdomain.com
+      - NEXT_PUBLIC_GIT_BASE_URL=https://git.yourdomain.com
+
+  backend:
+    deploy:
+      replicas: 3
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1.0'
+        reservations:
+          memory: 512M
+          cpus: '0.5'
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+    volumes:
+      - /data/git/repositories:/var/git/repositories
+      - /data/git/temp:/var/git/temp
+
+  webhook-processor:
+    deploy:
+      replicas: 5
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.5'
+        reservations:
+          memory: 128M
+          cpus: '0.25'
+
+  job-processor:
+    deploy:
+      replicas: 3
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+          cpus: '0.25'
+    volumes:
+      - /data/git/repositories:/var/git/repositories
+      - /data/git/temp:/var/git/temp

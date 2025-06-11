@@ -1,0 +1,78 @@
+# Backend services (Git server, API, webhooks)
+FROM node:18-alpine AS base
+
+# Install Git and other dependencies
+RUN apk add --no-cache \
+    git \
+    openssh-server \
+    curl \
+    bash \
+    sudo \
+    shadow
+
+# Create git user
+RUN adduser -D -s /bin/bash git
+RUN echo "git:$(openssl rand -base64 32)" | chpasswd
+
+# Install dependencies
+FROM base AS deps
+WORKDIR /app
+COPY package.json yarn.lock* package-lock.json* pnpm-lock.yaml* ./
+RUN \
+  if [ -f yarn.lock ]; then yarn --frozen-lockfile; \
+  elif [ -f package-lock.json ]; then npm ci; \
+  elif [ -f pnpm-lock.yaml ]; then yarn global add pnpm && pnpm i --frozen-lockfile; \
+  else echo "Lockfile not found." && exit 1; \
+  fi
+
+# Build backend services
+FROM base AS builder
+WORKDIR /app
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
+
+# Build TypeScript
+RUN npm run build:backend
+
+# Production image
+FROM base AS runner
+WORKDIR /app
+
+ENV NODE_ENV production
+
+# Copy built backend
+COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/package.json ./package.json
+
+# Set up Git repositories directory
+RUN mkdir -p /var/git/repositories
+RUN chown -R git:git /var/git
+RUN chmod -R 755 /var/git
+
+# Set up SSH for Git
+RUN mkdir -p /home/git/.ssh
+RUN chown git:git /home/git/.ssh
+RUN chmod 700 /home/git/.ssh
+
+# SSH configuration
+COPY docker/sshd_config /etc/ssh/sshd_config
+RUN ssh-keygen -A
+
+# Git configuration
+RUN git config --global user.name "Git Server"
+RUN git config --global user.email "git@localhost"
+RUN git config --global init.defaultBranch main
+
+# Expose ports
+EXPOSE 3001 22
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD curl -f http://localhost:3001/health || exit 1
+
+# Start script
+COPY docker/start-backend.sh /start-backend.sh
+RUN chmod +x /start-backend.sh
+
+CMD ["/start-backend.sh"]
